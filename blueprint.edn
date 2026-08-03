@@ -1,0 +1,25 @@
+{:itonami.blueprint/id "cloud-itonami-jsic-3914"
+ :itonami.blueprint/name "Independent Game Software Production Studio"
+ :itonami.blueprint/jsic-code "3914"
+ :itonami.blueprint/jsic-path ["G 情報通信業" "39 情報サービス業" "391 ソフトウェア業"
+                               "3914 ゲームソフトウェア業"]
+ :itonami.blueprint/domain :creative/game-software-production
+ :itonami.blueprint/license "AGPL-3.0-or-later"
+ :itonami.blueprint/social-impact [:creative-livelihoods :cultural-expression :local-jobs]
+ :itonami.blueprint/governor :game-production-governor
+ :itonami.blueprint/robotics true
+ :itonami.blueprint/required-technologies [:robotics :identity :forms :dmn :bpmn :audit-ledger]
+ :itonami.blueprint/craft-libraries ["kotoba-lang/game-production"]
+ :itonami.blueprint/business-layer "cloud-itonami/gameka"
+ ;; Why JSIC and not ISCO/ISIC — the same collision animeka hit (ADR-2607221000).
+ ;; ISCO-08 2166 is taken by an unrelated print-proofing graphic design studio,
+ ;; the 251x software unit groups are taken by generic dev/web/QA studios, and
+ ;; ISIC 5820 (software publishing) is taken by a CRM/subscription SaaS actor.
+ ;; None of them can express game software production without colliding with an
+ ;; implemented, unrelated business.
+ :itonami.blueprint/classification-note
+ {:isco-08 {:considered ["2166" "2512" "2513"] :rejected :occupied-by-unrelated-implementation}
+  :isic-rev4 {:considered ["5820"] :rejected :occupied-by-unrelated-implementation}
+  :source ["https://www.e-stat.go.jp/classifications/terms/10/04/3914"
+           "https://www.e-stat.go.jp/classifications/terms/10/03/3914"]}
+ :itonami.blueprint/status :public-oss}

@@ -1,0 +1,117 @@
+(ns game-software.governor-test
+  (:require [clojure.test :refer [deftest is testing]]
+            [game-software.governor :as gov]
+            [game-software.store :as store]))
+
+(def holdable-spec
+  "A spec whose best weapon clears the terminal rate: 240 shamblers/min at
+  18 hp needs 72 dps sustained, and the smg does 50."
+  {:gamespec/id "fixture-v1"
+   :mechanic
+   {:win {:win/survive-ms 900000}
+    :player {:player/max-hp 100 :player/move-speed-px 105 :player/contact-iframe-ms 500}
+    :day-cycle {:day-cycle/phase-ms 120000
+                :day-cycle/night-rage-windows-ms [[300000 360000]]
+                :day-cycle/night-rage-spawn-permille 1500}
+    :weapons [{:weapon/id "smg" :weapon/base-dmg 9 :weapon/cooldown-ms 100
+               :weapon/shape "bullet-spray"}]
+    :enemies [{:enemy/id "shambler" :enemy/hp 18 :enemy/speed 45 :enemy/dmg 6
+               :enemy/spawn-weight 100}]
+    :waves {:waves/base-spawn-interval-ms 1200 :waves/min-spawn-interval-ms 250
+            :waves/max-alive 400}}})
+
+(def unholdable-spec
+  (assoc-in holdable-spec [:mechanic :weapons 0 :weapon/cooldown-ms] 2000))
+
+(defn- store-with [title]
+  (store/register-title! (store/mem-store) title))
+
+(def cleared {:title/id "t1" :age-rated? true :assets-cleared? true})
+
+(def build-proposal {:op :build :effect :propose :confidence 0.9 :stake :low})
+(def publish-proposal {:op :publish :effect :propose :confidence 0.9 :stake :low})
+
+(deftest endgame-arithmetic
+  (testing "the smg at 90 dps clears the 72 dps the terminal rate demands"
+    (let [e (gov/holdable? holdable-spec)]
+      (is (true? (:holdable? e)))
+      (is (= 72000 (:required-dps-milli e)))
+      (is (= "shambler" (:enemy e)))))
+  (testing "the same weapon on a 2 s cooldown cannot hold it"
+    (is (false? (:holdable? (gov/holdable? unholdable-spec)))))
+  (testing "night rage raises the bar and is reported alongside"
+    (is (= 108000 (:night-rage-required-dps-milli (gov/holdable? holdable-spec)))))
+  (testing "a spec with no waves declared is unanswerable, not failing"
+    (is (nil? (gov/holdable? {:mechanic {:enemies [{:enemy/id "z" :enemy/hp 1}]}})))))
+
+(deftest hard-invariants-always-hold
+  (testing "an unregistered title is a hard hold, whatever the proposal says"
+    (let [v (gov/check {:title-id "ghost" :spec holdable-spec} nil build-proposal
+                       (store/mem-store))]
+      (is (true? (:hard? v)))
+      (is (false? (:escalate? v)))
+      (is (= [:no-title] (mapv :rule (:violations v))))))
+  (testing "an advisor that tries to write directly is a hard hold"
+    (let [v (gov/check {:title-id "t1" :spec holdable-spec} nil
+                       (assoc build-proposal :effect :commit) (store-with cleared))]
+      (is (true? (:hard? v)))
+      (is (= [:no-actuation] (mapv :rule (:violations v)))))))
+
+(deftest a-sound-build-commits
+  (let [v (gov/check {:title-id "t1" :spec holdable-spec} nil build-proposal
+                     (store-with cleared))]
+    (is (true? (:ok? v)))
+    (is (false? (:hard? v)))
+    (is (false? (:escalate? v)))
+    (testing "the design report travels with the verdict"
+      (is (= 0 (:problem-count (:design v))))
+      (is (true? (:holdable? (:endgame (:design v))))))))
+
+(deftest an-inconsistent-spec-escalates
+  (let [broken (assoc-in holdable-spec [:mechanic :weapons 0 :weapon/evolves-to] "railgun")
+        v (gov/check {:title-id "t1" :spec broken} nil build-proposal (store-with cleared))]
+    (is (true? (:escalate? v)))
+    (is (contains? (set (map :rule (:escalations v))) :inconsistent-gamespec))
+    (testing "the findings themselves reach the human, not just a count"
+      (let [e (first (filter #(= :inconsistent-gamespec (:rule %)) (:escalations v)))]
+        (is (= [:evolves-to-unknown-weapon] (mapv :kind (:problems e))))))))
+
+(deftest a-game-with-no-endgame-escalates
+  (let [v (gov/check {:title-id "t1" :spec unholdable-spec} nil build-proposal
+                     (store-with cleared))
+        e (first (filter #(= :no-endgame (:rule %)) (:escalations v)))]
+    (is (true? (:escalate? v)))
+    (is (some? e))
+    (testing "the hold says by how much"
+      (is (= 4500 (:best-dps-milli (:endgame e))))
+      (is (= 72000 (:required-dps-milli (:endgame e)))))))
+
+(deftest publishing-needs-both-clearances
+  (testing "no age rating"
+    (let [v (gov/check {:title-id "t1"} nil publish-proposal
+                       (store-with (assoc cleared :age-rated? false)))]
+      (is (contains? (set (map :rule (:escalations v))) :rights-clearance))))
+  (testing "rated but assets uncleared is still a hold"
+    (let [v (gov/check {:title-id "t1"} nil publish-proposal
+                       (store-with (assoc cleared :assets-cleared? false)))]
+      (is (contains? (set (map :rule (:escalations v))) :rights-clearance))))
+  (testing "both cleared publishes"
+    (let [v (gov/check {:title-id "t1"} nil publish-proposal (store-with cleared))]
+      (is (true? (:ok? v))))))
+
+(deftest degraded-legs-block-a-release
+  (let [v (gov/check {:title-id "t1" :legs {:bed :silent :sfx :placeholder :sprites :murakumo}}
+                     nil publish-proposal (store-with cleared))
+        e (first (filter #(= :degraded-generation (:rule %)) (:escalations v)))]
+    (is (true? (:escalate? v)))
+    (is (= #{:bed :sfx} (set (map :leg (:legs e)))))
+    (testing "a leg that actually ran is not reported as degraded"
+      (is (not-any? #(= :sprites (:leg %)) (:legs e)))))
+  (testing "no legs reported at all is not read as a clean run — it is silent"
+    (is (= [] (gov/degraded-legs nil)))))
+
+(deftest low-confidence-escalates-even-when-everything-else-passes
+  (let [v (gov/check {:title-id "t1" :spec holdable-spec} nil
+                     (assoc build-proposal :confidence 0.2) (store-with cleared))]
+    (is (true? (:escalate? v)))
+    (is (= [:low-confidence] (mapv :rule (:escalations v))))))
