@@ -134,8 +134,8 @@ that is left to humans on purpose.
 ## Run
 
 ```bash
-clojure -M:test
-clojure -M:lint
+kbb -M:test
+kbb -M:lint
 ```
 
 See `docs/operator-guide.md` to run one, and `docs/business-model.md` for what
