@@ -24,7 +24,7 @@
   (ADR-2607173100) and passes the resolved model in. A model id baked in
   here would pin every operator of this blueprint to whatever was current
   the day it was written."
-  (:require #?(:clj [clojure.edn :as edn]
+  (:require #?(:clj [kotoba.lang.edn :as edn]
                :cljs [cljs.reader :as edn])))
 
 (defprotocol Advisor
