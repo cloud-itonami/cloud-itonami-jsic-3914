@@ -1,5 +1,5 @@
 (ns game-software.actor-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.test :refer [deftest is testing]]
             [game-software.actor :as actor]
             [game-software.governor-test :refer [holdable-spec unholdable-spec]]
             [game-software.store :as store]))
