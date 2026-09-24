@@ -1,0 +1,46 @@
+;; What this vertical's robot physically does, declared for
+;; kotoba.robotics.process (kotoba-lang/robotics). `kbb -M:physics` runs it.
+;;
+;; README has no "Robotics premise" section; blueprint.edn declares
+;; :itonami.blueprint/robotics true. This actor governs build/publish
+;; decisions for game titles, so the physical work of its robot is the
+;; device-QA lab around a build: carrying a cart of devkits/test devices from
+;; the build farm to the QA lab, moving a controller under test between the
+;; charging dock and a button-press fixture, and holding a handheld under a
+;; long soak test while its shell heats up.
+;;
+;; Every number without a cited source is marked `estimate` in its :basis.
+;; Replacing an estimate with a sourced value is this bot's growth work.
+{:physics/schema "itonami.physical-ai.spec.v1"
+ :repo "cloud-itonami/cloud-itonami-jsic-3914"
+ :cases
+ [{:id :devkit-cart-to-qa-lab
+   :kind :transport
+   :procedure "AMR tows a shelf cart of 60 kg of console devkits from the build farm up the ramp to the QA lab"
+   :params {:mass-kg 55.0 :distance-m 80.0 :v-max-mps 1.2 :a-max-mps2 0.6
+            :brake-decel-mps2 1.0 :drive-force-n 250.0 :crr 0.015
+            :cog-height-m 0.35 :support-half-length-m 0.30
+            :payload-kg 60.0 :payload-cog-height-m 1.10 :max-time-s 1200.0}
+   :sweep {:param :slope-deg :values [0.0 2.0 4.0 6.0 8.0 10.0]}
+   :quantity :min-tipover-margin
+   :limit {:min 0.3 :basis "estimate: keep 30 % of the static restoring moment in reserve on a cart whose devkits stack to ~1.1 m"}
+   :boundary {:lo 0.0 :hi 20.0}}
+  {:id :controller-to-press-fixture
+   :kind :manipulator
+   :procedure "arm lifts a controller under test from the charging dock onto the button-press fixture"
+   :params {:l1-m 0.30 :l2-m 0.25 :m1-kg 1.8 :m2-kg 1.2
+            :from [0.40 0.05] :to [0.15 0.35] :duration-s 1.2 :steps 400}
+   :sweep {:param :payload-kg :values [0.2 0.4 0.8 1.2 1.6]}
+   :quantity :peak-tau1-nm
+   :limit {:max 12.0 :basis "estimate: continuous shoulder torque of a desktop 3 kg-class arm"}
+   :boundary {:lo 0.05 :hi 10.0}}
+  {:id :handheld-soak-shell
+   :kind :thermal
+   :procedure "handheld held under a one-hour soak test: internal air heats the polycarbonate shell, skin faces room air"
+   :params {:thickness-m 0.002 :conductivity-w-mk 0.2 :density-kg-m3 1200.0 :specific-heat-j-kgk 1200.0
+            :t0-c 25.0 :h-front-w-m2k 15.0 :t-back-ambient-c 25.0 :h-back-w-m2k 10.0
+            :threshold-c 45.0 :duration-s 3600.0 :nodes 11}
+   :sweep {:param :t-hot-c :values [45.0 55.0 65.0 75.0 85.0]}
+   :quantity :final-back-c
+   :limit {:max 45.0 :basis "estimate: skin temperature a player can hold for an hour without discomfort (to be replaced by the IEC 62368-1 touch-temperature table)"}
+   :boundary {:lo 30.0 :hi 120.0}}]}
